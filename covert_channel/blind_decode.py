@@ -55,78 +55,95 @@ def blind_decode(iq_path: Path, profile: str, *, include_text: bool = False) -> 
     rate = PROFILES[profile]
     preamble = known_preamble_chips()
     payload_bits = BLOCKS * CODEWORD_BITS
-    high_receiver = EnergyReceiver(
-        sample_rate=SAMPLE_RATE,
-        center_hz=CENTER_HZ,
-        carrier_hz=HIGH_CARRIER_HZ,
-        window_samples=WINDOW_SAMPLES,
-        hop_samples=HOP_SAMPLES,
-        fft_size=FFT_SIZE,
-        half_bandwidth_hz=30_000 if rate >= 6_400 else 15_000,
-        energy_mode="signal",
-    )
-    energy = energies_from_file(iq_path, high_receiver)
-    harmonic = None
+    # The 1.505 MHz family can have a noisy upper sideband at a different loop
+    # placement. Keep the established receiver first, then try a fixed lower
+    # passband. Selection requires four independent parity+CRC-valid blocks;
+    # the sender text and any capture-side truth are never inputs here.
+    candidates = [(HIGH_CARRIER_HZ, 30_000 if rate >= 6_400 else 15_000,
+                   profile == "fast6500")]
     if profile == "fast6500":
-        energy, harmonic = combine_preamble_weighted(
-            iq_path,
-            energy,
+        candidates.append((1_495_000, 30_000, False))
+
+    best: dict | None = None
+    for carrier_hz, half_bandwidth_hz, use_harmonic in candidates:
+        receiver = EnergyReceiver(
             sample_rate=SAMPLE_RATE,
             center_hz=CENTER_HZ,
+            carrier_hz=carrier_hz,
             window_samples=WINDOW_SAMPLES,
             hop_samples=HOP_SAMPLES,
             fft_size=FFT_SIZE,
+            half_bandwidth_hz=half_bandwidth_hz,
+            energy_mode="signal",
+        )
+        energy = energies_from_file(iq_path, receiver)
+        harmonic = None
+        if use_harmonic:
+            energy, harmonic = combine_preamble_weighted(
+                iq_path,
+                energy,
+                sample_rate=SAMPLE_RATE,
+                center_hz=CENTER_HZ,
+                window_samples=WINDOW_SAMPLES,
+                hop_samples=HOP_SAMPLES,
+                fft_size=FFT_SIZE,
+                physical_rate=rate,
+                preamble_bits=preamble,
+                payload_logical_bits_count=payload_bits,
+            )
+        demod = decode_manchester(
+            energy,
+            sample_rate=SAMPLE_RATE,
+            window_samples=WINDOW_SAMPLES,
+            hop_samples=HOP_SAMPLES,
             physical_rate=rate,
             preamble_bits=preamble,
             payload_logical_bits_count=payload_bits,
         )
-    demod = decode_manchester(
-        energy,
-        sample_rate=SAMPLE_RATE,
-        window_samples=WINDOW_SAMPLES,
-        hop_samples=HOP_SAMPLES,
-        physical_rate=rate,
-        preamble_bits=preamble,
-        payload_logical_bits_count=payload_bits,
-    )
-    scores = deinterleave(demod.soft_scores_db, scramble=True)
-    recovered: list[np.ndarray] = []
-    block_status = []
-    for index in range(BLOCKS):
-        block = decode(scores[index * CODEWORD_BITS:(index + 1) * CODEWORD_BITS])
-        valid = bool(block.data is not None and block.syndrome_ok and block.crc_ok)
-        block_status.append({"block": index, "parity_ok": bool(block.syndrome_ok),
-                             "crc_ok": bool(block.crc_ok), "list_repaired": bool(block.list_repaired)})
-        if valid:
-            recovered.append(block.data)
-    result = {
-        "profile": profile,
-        "physical_symbols_per_second": rate,
-        "preamble_start_seconds": demod.start_window * HOP_SAMPLES / SAMPLE_RATE,
-        "preamble_errors": demod.preamble_bit_errors,
-        "preamble_margin_db": demod.preamble_margin_db,
-        "harmonic_low_weight": harmonic["low_weight"] if harmonic else None,
-        "fec_blocks_passed": len(recovered),
-        "fec_blocks_total": BLOCKS,
-        "blocks": block_status,
-        "message_valid": False,
-    }
-    if len(recovered) == BLOCKS:
-        try:
-            raw, message = unframe(recovered)
-        except (ValueError, UnicodeDecodeError) as exc:
-            result["frame_error"] = str(exc)
-        else:
-            result.update({
-                "message_valid": True,
-                "utf8_bytes": len(raw),
-                "message_sha256": hashlib.sha256(raw).hexdigest(),
-                "text_bit_rate_on_air": len(raw) * 8 /
-                    (2 * (len(preamble) // 2 + payload_bits) / rate),
-            })
-            if include_text:
-                result["decoded_message"] = message
-    return result
+        scores = deinterleave(demod.soft_scores_db, scramble=True)
+        recovered: list[np.ndarray] = []
+        block_status = []
+        for index in range(BLOCKS):
+            block = decode(scores[index * CODEWORD_BITS:(index + 1) * CODEWORD_BITS])
+            valid = bool(block.data is not None and block.syndrome_ok and block.crc_ok)
+            block_status.append({"block": index, "parity_ok": bool(block.syndrome_ok),
+                                 "crc_ok": bool(block.crc_ok), "list_repaired": bool(block.list_repaired)})
+            if valid:
+                recovered.append(block.data)
+        result = {
+            "profile": profile,
+            "physical_symbols_per_second": rate,
+            "receiver_carrier_hz": carrier_hz,
+            "receiver_half_bandwidth_hz": half_bandwidth_hz,
+            "preamble_start_seconds": demod.start_window * HOP_SAMPLES / SAMPLE_RATE,
+            "preamble_errors": demod.preamble_bit_errors,
+            "preamble_margin_db": demod.preamble_margin_db,
+            "harmonic_low_weight": harmonic["low_weight"] if harmonic else None,
+            "fec_blocks_passed": len(recovered),
+            "fec_blocks_total": BLOCKS,
+            "blocks": block_status,
+            "message_valid": False,
+        }
+        if len(recovered) == BLOCKS:
+            try:
+                raw, message = unframe(recovered)
+            except (ValueError, UnicodeDecodeError) as exc:
+                result["frame_error"] = str(exc)
+            else:
+                result.update({
+                    "message_valid": True,
+                    "utf8_bytes": len(raw),
+                    "message_sha256": hashlib.sha256(raw).hexdigest(),
+                    "text_bit_rate_on_air": len(raw) * 8 /
+                        (2 * (len(preamble) // 2 + payload_bits) / rate),
+                })
+                if include_text:
+                    result["decoded_message"] = message
+                return result
+        if best is None or result["fec_blocks_passed"] > best["fec_blocks_passed"]:
+            best = result
+    assert best is not None
+    return best
 
 
 def main() -> int:

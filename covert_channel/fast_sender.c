@@ -177,7 +177,7 @@ int main(int argc, char **argv) {
     const char *log_path = NULL;
     const char *payload_file_path = NULL;
     const char *text_arg = NULL, *text_file_path = NULL;
-    bool payload_bits_explicit = false;
+    bool payload_bits_explicit = false, workers_explicit = false;
     bool rate_explicit = false, encoding_explicit = false, clock_explicit = false;
     static const struct option options[] = {
         {"rate", required_argument, NULL, 'r'},
@@ -204,7 +204,7 @@ int main(int argc, char **argv) {
         switch (opt) {
             case 'r': rate = (uint32_t)strtoul(optarg, NULL, 0); rate_explicit = true; break;
             case 'b': payload_bits = (uint32_t)strtoul(optarg, NULL, 0); payload_bits_explicit = true; break;
-            case 'w': worker_count = (uint32_t)strtoul(optarg, NULL, 0); break;
+            case 'w': worker_count = (uint32_t)strtoul(optarg, NULL, 0); workers_explicit = true; break;
             case 'm': buffer_mib = (uint32_t)strtoul(optarg, NULL, 0); break;
             case 'l': lead_ms = (uint32_t)strtoul(optarg, NULL, 0); break;
             case 's': seed = (uint32_t)strtoul(optarg, NULL, 0); break;
@@ -278,6 +278,7 @@ int main(int argc, char **argv) {
         encode_message(message, message_len, file_payload);
         payload_bits = MESSAGE_WIRE_BITS;
         if (!rate_explicit) rate = 6500;
+        if (!workers_explicit) worker_count = 8;
         if (!clock_explicit) busy_clock = true;
         encoding = ENCODING_MANCHESTER;
         if (rate != 6250 && rate != 6500) {
