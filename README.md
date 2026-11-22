@@ -26,3 +26,5 @@ The native 6,500-symbol/s profile previously recovered 64/64 blocks in 16 indepe
 ## Source
 
 `covert_channel/` contains the native sender, packet framing, interleaver, FEC, and IQ decoder. `site/` contains the browser transmitter and interactive capture viewer. Large raw recordings are intentionally outside Git; see the separately archived challenge ZIPs in the experiment workspace.
+
+`experiments/v12/source/` preserves the separate Morse-to-fast file-transfer sender, capture, and oracle decoder used for the JPEG blind-reader experiment. It is research source rather than part of the installable 0.1.0 text CLI. `experiments/v12/make_signal_explorer.py` generates the article's measured waveform viewer from the saved capture.
