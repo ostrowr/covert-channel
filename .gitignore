@@ -3,6 +3,8 @@ __pycache__/
 *.pyc
 covert_channel/fast_sender
 covert-channel-send
+covert-channel
+covert-channel-decoder
 *.iq
 *.npy
 *.log

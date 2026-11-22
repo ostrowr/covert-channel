@@ -9,9 +9,6 @@ description = "Experimental Mac memory-workload RF transmitter and SDR IQ decode
 requires-python = ">=3.11"
 dependencies = ["numpy>=2,<3", "websockets>=14,<16"]
 
-[project.scripts]
-covert-channel-decode = "covert_channel.blind_decode:main"
-
 [tool.setuptools]
 include-package-data = true
 packages = ["covert_channel"]
