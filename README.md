@@ -8,23 +8,24 @@ Private working repository for the interactive article and the Mac-to-SDRplay RF
 
 The measured explorer includes the recovered photo and sender-state overlay. Do not hand it to a model taking a blind challenge; use the separate spoiler-free IQ ZIP instead.
 
-## Native CLI (macOS)
+## Native sender and IQ decoder (macOS)
 
 ```sh
 python3 -m venv .venv
 .venv/bin/pip install -e .
-.venv/bin/covert-channel emit --text 'Hello over RF'
-.venv/bin/covert-channel decode /path/to/capture.iq --profile fast6500
+make covert-channel-send
+./covert-channel-send --text 'Hello over RF'
+.venv/bin/covert-channel-decode /path/to/capture.iq --profile fast6500 --include-text
 ```
 
-`emit` compiles the included C sender with `cc` on first use. It uses four memory workers and a 6,500-symbol/s Manchester-coded packet with interleaving, FEC, and CRC. The frame carries up to 1,020 UTF-8 bytes. `--rate 6250` selects the more conservative profile; use `--profile baseline6250` when decoding it. The transmitter uses no display or audio signal.
+`covert-channel-send` is a C executable. It accepts `--text` or `--text-file` and performs framing, CRC, FEC, interleaving, and timed memory workload transmission itself, with no Python sender wrapper. It uses four memory workers and a 6,500-symbol/s Manchester-coded packet by default. The frame carries up to 1,020 UTF-8 bytes. `--rate 6250` selects the more conservative profile; use `--profile baseline6250` when decoding it. The transmitter uses no display or audio signal.
 
-`decode` expects raw interleaved little-endian int16 I/Q sampled at 2 MS/s, with the SDR centered at 1.400 MHz. It discovers timing from the public preamble and prints text only if all four FEC blocks pass parity and CRC. The SDRplay capture step is currently performed by the existing headless SDRconnect workflow; this CLI consumes its saved IQ file. For a supervised send-and-capture experiment, `python -m covert_channel.fast_link --message-file message.txt --iq-out capture.iq` uses a running, selected SDRconnect headless receiver at `127.0.0.1:9876`. Keep receiver audio disabled and muted.
+`covert-channel-decode` expects raw interleaved little-endian int16 I/Q sampled at 2 MS/s, with the SDR centered at 1.400 MHz. It discovers timing from the public preamble and prints text only if all four FEC blocks pass parity and CRC. The SDRplay capture step is currently performed by the existing headless SDRconnect workflow; the decoder consumes its saved IQ file. For a supervised send-and-capture experiment, `python -m covert_channel.fast_link --message-file message.txt --iq-out capture.iq` uses a running, selected SDRconnect headless receiver at `127.0.0.1:9876`. Keep receiver audio disabled and muted.
 
 The native 6,500-symbol/s profile previously recovered 64/64 blocks in 16 independent captures using the two-harmonic receiver, but that finite result is not a reliability guarantee for another setup. The browser sender has a different protocol and a much lower rate.
 
 ## Source
 
-`covert_channel/` contains the native sender, packet framing, interleaver, FEC, and IQ decoder. `site/` contains the browser transmitter and interactive capture viewer. Large raw recordings are intentionally outside Git; see the separately archived challenge ZIPs in the experiment workspace.
+`covert_channel/` contains the native sender, its fixed wire-format encoder, and the Python IQ decoder. `site/` contains the browser transmitter and interactive capture viewer. Large raw recordings are intentionally outside Git; see the separately archived challenge ZIPs in the experiment workspace.
 
 `experiments/v12/source/` preserves the separate Morse-to-fast file-transfer sender, capture, and oracle decoder used for the JPEG blind-reader experiment. It is research source rather than part of the installable 0.1.0 text CLI. `experiments/v12/make_signal_explorer.py` generates the article's measured waveform viewer from the saved capture.

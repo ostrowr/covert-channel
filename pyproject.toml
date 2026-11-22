@@ -4,17 +4,17 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "covert-channel"
-version = "0.1.0"
+version = "0.2.0"
 description = "Experimental Mac memory-workload RF transmitter and SDR IQ decoder"
 requires-python = ">=3.11"
 dependencies = ["numpy>=2,<3", "websockets>=14,<16"]
 
 [project.scripts]
-covert-channel = "covert_channel.cli:main"
+covert-channel-decode = "covert_channel.blind_decode:main"
 
 [tool.setuptools]
 include-package-data = true
 packages = ["covert_channel"]
 
 [tool.setuptools.package-data]
-covert_channel = ["fast_sender.c"]
+covert_channel = ["fast_sender.c", "message_codec.h", "interleave_order.h"]

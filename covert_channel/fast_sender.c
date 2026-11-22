@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include "message_codec.h"
 
 enum { CHUNK_LINES = 256, MAX_WORKERS = 12 };
 typedef enum { IDLE_PARK, IDLE_SPIN, IDLE_CACHE } IdleMode;
@@ -163,6 +164,7 @@ static void usage(const char *name) {
             "Usage: %s [--rate BPS] [--payload-bits N] [--workers N] "
             "[--buffer-mib N] [--lead-ms N] [--seed N] [--mode park|spin|cache] "
             "[--encoding nrz|manchester] [--payload-file PATH] "
+            "[--text UTF8 | --text-file PATH] "
             "[--clock hybrid|busy] [--spin-us N] "
             "[--worker-qos default|initiated] [--clock-qos default|interactive] "
             "[--log PATH]\n",
@@ -174,7 +176,9 @@ int main(int argc, char **argv) {
     uint32_t buffer_mib = 128, lead_ms = 1000, seed = 0x93c5a771;
     const char *log_path = NULL;
     const char *payload_file_path = NULL;
+    const char *text_arg = NULL, *text_file_path = NULL;
     bool payload_bits_explicit = false;
+    bool rate_explicit = false, encoding_explicit = false, clock_explicit = false;
     static const struct option options[] = {
         {"rate", required_argument, NULL, 'r'},
         {"payload-bits", required_argument, NULL, 'b'},
@@ -185,6 +189,8 @@ int main(int argc, char **argv) {
         {"mode", required_argument, NULL, 'o'},
         {"encoding", required_argument, NULL, 'e'},
         {"payload-file", required_argument, NULL, 'p'},
+        {"text", required_argument, NULL, 1002},
+        {"text-file", required_argument, NULL, 1003},
         {"clock", required_argument, NULL, 'c'},
         {"spin-us", required_argument, NULL, 'u'},
         {"worker-qos", required_argument, NULL, 1000},
@@ -196,7 +202,7 @@ int main(int argc, char **argv) {
     int opt;
     while ((opt = getopt_long(argc, argv, "r:b:w:m:l:s:o:e:p:c:u:f:h", options, NULL)) != -1) {
         switch (opt) {
-            case 'r': rate = (uint32_t)strtoul(optarg, NULL, 0); break;
+            case 'r': rate = (uint32_t)strtoul(optarg, NULL, 0); rate_explicit = true; break;
             case 'b': payload_bits = (uint32_t)strtoul(optarg, NULL, 0); payload_bits_explicit = true; break;
             case 'w': worker_count = (uint32_t)strtoul(optarg, NULL, 0); break;
             case 'm': buffer_mib = (uint32_t)strtoul(optarg, NULL, 0); break;
@@ -209,12 +215,16 @@ int main(int argc, char **argv) {
                 else { usage(argv[0]); return 2; }
                 break;
             case 'e':
+                encoding_explicit = true;
                 if (!strcmp(optarg, "nrz")) encoding = ENCODING_NRZ;
                 else if (!strcmp(optarg, "manchester")) encoding = ENCODING_MANCHESTER;
                 else { usage(argv[0]); return 2; }
                 break;
             case 'p': payload_file_path = optarg; break;
+            case 1002: text_arg = optarg; break;
+            case 1003: text_file_path = optarg; break;
             case 'c':
+                clock_explicit = true;
                 if (!strcmp(optarg, "busy")) busy_clock = true;
                 else if (!strcmp(optarg, "hybrid")) busy_clock = false;
                 else { usage(argv[0]); return 2; }
@@ -235,8 +245,47 @@ int main(int argc, char **argv) {
             default: usage(argv[0]); return 2;
         }
     }
+    if (optind != argc) { usage(argv[0]); return 2; }
+    bool text_mode = text_arg || text_file_path;
+    if ((text_arg && text_file_path) ||
+        (text_mode && (payload_file_path || payload_bits_explicit)) ||
+        (text_mode && encoding_explicit && encoding != ENCODING_MANCHESTER)) {
+        fprintf(stderr, "Text mode is incompatible with payload bits/file or NRZ encoding\n");
+        return 2;
+    }
     uint8_t *file_payload = NULL;
-    if (payload_file_path) {
+    if (text_mode) {
+        uint8_t text_buffer[MESSAGE_CAPACITY + 1];
+        const uint8_t *message = (const uint8_t *)text_arg;
+        size_t message_len = 0;
+        if (text_file_path) {
+            FILE *file = fopen(text_file_path, "rb");
+            if (!file) { perror("fopen text-file"); return 2; }
+            message_len = fread(text_buffer, 1, sizeof(text_buffer), file);
+            if (ferror(file)) { perror("fread text-file"); fclose(file); return 2; }
+            fclose(file);
+            message = text_buffer;
+        } else {
+            message_len = strlen(text_arg);
+        }
+        if (!message_len || message_len > MESSAGE_CAPACITY ||
+            !valid_utf8(message, message_len)) {
+            fprintf(stderr, "Message must be 1–%d valid UTF-8 bytes without NUL\n", MESSAGE_CAPACITY);
+            return 2;
+        }
+        file_payload = malloc(MESSAGE_WIRE_BITS);
+        if (!file_payload) { perror("malloc message payload"); return 1; }
+        encode_message(message, message_len, file_payload);
+        payload_bits = MESSAGE_WIRE_BITS;
+        if (!rate_explicit) rate = 6500;
+        if (!clock_explicit) busy_clock = true;
+        encoding = ENCODING_MANCHESTER;
+        if (rate != 6250 && rate != 6500) {
+            fprintf(stderr, "Text mode supports only 6250 or 6500 symbols/s\n");
+            free(file_payload);
+            return 2;
+        }
+    } else if (payload_file_path) {
         FILE *file = fopen(payload_file_path, "rb");
         if (!file) { perror("fopen payload-file"); return 2; }
         file_payload = malloc(1000000);
