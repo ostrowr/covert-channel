@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+covert_channel/fast_sender
+*.iq
+*.npy
+*.log
+*.egg-info/
+dist/
+build/
