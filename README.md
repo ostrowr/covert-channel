@@ -1,6 +1,6 @@
-# Covert Channels without Coordination
+# covert-channel
 
-An interactive article draft (`site/`) and a Mac-to-SDRplay RF experiment. The article text is left for the author.
+A macOS command-line experiment that sends messages through memory activity and decodes the resulting SDRplay IQ recordings.
 
 ## CLI
 
@@ -14,4 +14,4 @@ make
 
 `encode` also accepts `--text-file message.txt` and carries up to 1,020 UTF-8 bytes. `decode` reads raw interleaved int16 IQ sampled at 2 MS/s with the SDR centered at 1.400 MHz. Both commands default to the 6,500-symbol/s profile; use `--rate 6250` on both for the fallback profile. The encoder defaults to eight memory workers (about 1 GiB for four seconds), with no display or audio signaling. The decoder prints the message only after all four blocks pass FEC and CRC.
 
-The browser demo has its own slower packet format. `experiments/v12/` contains the separate blind-reader file-transfer research source. Raw IQ recordings are kept outside Git.
+`experiments/v12/` contains the separate blind-reader file-transfer research source. Raw IQ recordings are kept outside Git.
